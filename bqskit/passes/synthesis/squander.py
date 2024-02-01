@@ -28,26 +28,26 @@ from bqskit.utils.typing import is_real_number
 _logger = logging.getLogger(__name__)
 
 
-class Squander(SynthesisPass):
+class SquanderSynthesisPass(SynthesisPass):
     """
-    A pass implementing the QSearch A* synthesis algorithm.
+    A pass implementing the Squander synthesis algorithm.
 
     References:
-        Davis, Marc G., et al. “Towards Optimal Topology Aware Quantum
-        Circuit Synthesis.” 2020 IEEE International Conference on Quantum
-        Computing and Engineering (QCE). IEEE, 2020.
+       Dr. Peter Rakyta
     """
 
     def __init__(
         self,
         heuristic_function: HeuristicFunction = AStarHeuristic(),
         layer_generator: LayerGenerator | None = None,
-        success_threshold: float = 1e-8,
+        success_threshold: float = 1e-7,
         cost: CostFunctionGenerator = HilbertSchmidtResidualsGenerator(),
         max_layer: int | None = None,
         store_partial_solutions: bool = False,
         partials_per_depth: int = 25,
         instantiate_options: dict[str, Any] = {},
+        squander_config: dict[str, Any] = {} ,
+        optimizer_engine: str = 'BFGS'
     ) -> None:
         """
         Construct a search-based synthesis pass.
@@ -85,6 +85,8 @@ class Squander(SynthesisPass):
             instantiate_options (dict[str: Any]): Options passed directly
                 to circuit.instantiate when instantiating circuit
                 templates. (Default: {})
+                
+            squander_config: 
 
         Raises:
             ValueError: If `max_depth` is nonpositive.
@@ -139,12 +141,31 @@ class Squander(SynthesisPass):
         self.instantiate_options.update(instantiate_options)
         self.store_partial_solutions = store_partial_solutions
         self.partials_per_depth = partials_per_depth
+        self.squander_config = squander_config
+        self.optimizer_engine = optimizer_engine
+        
+        if squander_config is None :
+                #Python map containing hyper-parameters	
+            squander_config = { 'max_outer_iterations': 1, 
+                'agent_lifetime':200,
+                'max_inner_iterations_agent': 10000,
+                'convergence_length': 10,
+                'max_inner_iterations_compression': 10000,
+                'max_inner_iterations' : 500,
+                'max_inner_iterations_final': 5000, 		
+                'Randomized_Radius': 0.3, 
+                'randomized_adaptive_layers': 1,
+                'optimization_tolerance_agent': 1e-2} #1e-2
+                
+        squander_config['optimization_tolerance'] = self.success_threshold
+        
 
 
      
     def transform_circuit_from_squander_to_qsearch(self,
         cDecompose,
         qubitnum)-> Circuit:
+        "a function to change the circuit from bqskit to squander"
     #import all the gates
         from bqskit.ir.gates.constant.cx import CNOTGate
         from bqskit.ir.gates.parameterized.cry import CRYGate
@@ -260,8 +281,9 @@ class Squander(SynthesisPass):
                 circuit.append_gate(RZGate(), (target_qbit))
        
   
-  
         return(circuit)
+
+
     async def synthesize(
         self,
         utry: UnitaryMatrix | StateVector | StateSystem,
@@ -278,53 +300,98 @@ class Squander(SynthesisPass):
         import random
         import math 
         
-        qubitnum=math.floor(math.log2(utry.__len__()))
+        qubitnum = math.floor(math.log2(Umtx.shape[0]))
+
+
+        # use SQAUNDER to decompose bigger than 2-qubit unitaries
         if qubitnum > 2 :
-          
+
             
-                #Python map containing hyper-parameters
-            config = { 	
-                'Randomized_Radius': 0.3, 
-                'randomized_adaptive_layers': 1,
-                'optimization_tolerance': self.success_threshold}
-            
-            
-            cDecompose = N_Qubit_Decomposition_adaptive(Umtx.conj().T, level_limit_max=5,level_limit_min=0, config=config)
-            cDecompose.set_Verbose(0)
-            cDecompose.Start_Decomposition()
+            cDecompose = N_Qubit_Decomposition_adaptive( Umtx.conj().T, config=self.squander_config, accelerator_num=0 )
+            #cDecompose.set_Project_Name( project_name )
+
+            cDecompose.set_Cost_Function_Variant( 0)
+	
+            cDecompose.set_Verbose( -3 )
+
+	
+	
+            # adding decomposing layers to the gate structure
+            cDecompose.add_Finalyzing_Layer_To_Gate_Structure()	
+
+	
+            # setting intial parameter set
+            parameter_num = cDecompose.get_Parameter_Num()
+            parameters = np.zeros( (parameter_num,1), dtype=np.float64 )
+            cDecompose.set_Optimized_Parameters( parameters )
+	
+	
+
+            # adding new layer to the decomposition until threshold
+            for new_layer in range(5):
+
+		# setting optimizer
+                cDecompose.set_Optimizer("AGENTS")
+
+		# starting the decomposition
+                cDecompose.get_Initial_Circuit()
+
+		# store parameters after the evolutionary optimization 
+		# (After BFGS converge to local minimum, evolutionary optimization wont make it better)
+                params_AGENTS = cDecompose.get_Optimized_Parameters()
+
+		# setting optimizer
+                cDecompose.set_Optimizer("BFGS")
+
+		# continue the decomposition with a second optimizer method
+                cDecompose.get_Initial_Circuit()   
+
+                params_BFGS  = cDecompose.get_Optimized_Parameters()
+                decomp_error = cDecompose.Optimization_Problem( params_BFGS )
+
+                if decomp_error <= self.squander_config['optimization_tolerance']:
+                     break
+                else:
+                    # restore parameters to the evolutionary ones since BFGS iterates to local minima
+                    cDecompose.set_Optimized_Parameters( params_AGENTS )
+
+                    # add new layer to the decomposition if toleranace was not reached
+                    cDecompose.add_Layer_To_Imported_Gate_Structure()
+
+
+
+            cDecompose.set_Optimizer("BFGS") 
+
+	    # starting compression iterations
+            cDecompose.Compress_Circuit()	
+
+
+	
+	    # finalize the gate structure (replace CRY gates with CNOT gates)
+            cDecompose.Finalize_Circuit()	
             
    
-            Circuit_squander=self.transform_circuit_from_squander_to_qsearch(cDecompose,qubitnum)
-            Unitarymatrix_bqskit=Circuit.get_unitary(Circuit_squander)	
+            Circuit_squander = self.transform_circuit_from_squander_to_qsearch(cDecompose,qubitnum)          
+            dist             = self.cost.calc_cost(Circuit_squander, utry)  
+
+            _logger.debug("The error of the decomposition with SQUANDER is "  + str(dist))            
+           
             
-            product_matrix = np.dot(Umtx,Unitarymatrix_bqskit.conj().T)
-            phase = np.angle(product_matrix[0,0])
-            product_matrix = product_matrix*np.exp(-1j*phase)
-            shape=np.shape(product_matrix)
-            product_matrix = np.eye(shape[0])*2 - product_matrix - product_matrix.conj().T
-            decomposition_error = (np.real(np.trace(product_matrix)))/2
-            _logger.debug("The error of the decomposition is"  + str(decomposition_error))	
-            
-            squander_decomposition_error=cDecompose.get_Decomposition_Error()
-            
-            
-            if decomposition_error >  self.success_threshold:
-                num = random.random()  
-                Circuit.save(Circuit_squander,"bad_circuit" + str(num) + ".qasm")
-                np.savetxt("bad_Unitarybqskit" + str(num) + ".txt",Unitarymatrix_bqskit)
-                np.savetxt("bad_umtx" + str(num) + ".txt",Umtx)
-                #np.savetxt("decomposition_error" + str(num) + ".txt",decomposition_error)
-                print(decomposition_error)
-                _logger.debug('the squander decomposition error is bigger than the succes_treshold, with the value of:',decomposition_error)
-                #exit()
-                
+            if dist >  self.success_threshold:
+                _logger.debug('the squander decomposition error is bigger than the succes_treshold, with the value of:', dist)                
             else: 
                 _logger.debug('Successful synthesis with squander.')
-                #print("success with squander")
-                bqskit_error = self.cost.calc_cost(Circuit_squander, Unitarymatrix_bqskit)
-                print("the difference between our and cost.calc function:",decomposition_error - bqskit_error,"\n")
-                return(Circuit_squander) 
 
+
+            squander_gates = []
+
+            for gate in Circuit_squander.gate_set:
+                case_squander = {f"{gate}count:":  Circuit_squander.count(gate)}
+                squander_gates.append(case_squander)
+ 
+            print('qbit_num = ', qubitnum, ' dist = ', dist, squander_gates, "\n")
+                
+            return(Circuit_squander) 
 
         
         instantiate_options = self.instantiate_options.copy()
@@ -343,7 +410,7 @@ class Squander(SynthesisPass):
         frontier.add(initial_layer, 0)
 
         # Track best circuit, initially the initial layer
-        best_dist = self.cost.calc_cost(initial_layer, utry) # megnézni mit csinál mennyire hasonlít.
+        best_dist = self.cost.calc_cost(initial_layer, utry) 
         best_circ = initial_layer
         best_layer = 0
 
@@ -355,7 +422,6 @@ class Squander(SynthesisPass):
         # Evalute initial layer
         if best_dist < self.success_threshold:
             _logger.debug('Successful synthesis.')
-            
             return initial_layer
 
         # Main loop
@@ -384,6 +450,7 @@ class Squander(SynthesisPass):
                     _logger.debug('Successful synthesis.')
                     if self.store_partial_solutions:
                         data['psols'] = psols
+
                     return circuit
 
                 if dist < best_dist:
@@ -416,6 +483,7 @@ class Squander(SynthesisPass):
         )
         if self.store_partial_solutions:
             data['psols'] = psols
+
 
         return best_circ
 
