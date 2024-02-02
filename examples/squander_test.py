@@ -5,7 +5,7 @@ from bqskit.ir import Circuit
 
 circuit_name = 'heisenberg-16-20'
 
-circuit = Circuit.from_file( circuit_name + '.qasm')
+bqskit_circuit_original = Circuit.from_file( circuit_name + '.qasm')
 
 
 from bqskit.compiler import CompilationTask
@@ -30,10 +30,10 @@ start_squander = time.time()
  
  
 config = { 'max_outer_iterations': 1, 
-                'agent_lifetime':400,
+                'agent_lifetime':200,
                 'max_inner_iterations_agent': 100000,
                 'convergence_length': 10,
-                'max_inner_iterations_compression': 10000,
+                'max_inner_iterations_compression': 100000,
                 'max_inner_iterations' : 10000,
                 'max_inner_iterations_final': 10000, 		
                 'Randomized_Radius': 0.3, 
@@ -41,7 +41,7 @@ config = { 'max_outer_iterations': 1,
                 'optimization_tolerance_agent': 1e-3} #1e-2
                 
 
-task = CompilationTask(circuit, [
+task = CompilationTask(bqskit_circuit_original, [
     QuickPartitioner(4), 
     ForEachBlockPass([SquanderSynthesisPass(squander_config=config, optimizer_engine="AGENTS" ), ScanningGateRemovalPass()]), 
     UnfoldPass(),
@@ -51,8 +51,8 @@ print("\n the original gates are: \n")
     
 original_gates = []
 
-for gate in circuit.gate_set:
-    case_original = {f"{gate}count:": circuit.count(gate)}
+for gate in bqskit_circuit_original.gate_set:
+    case_original = {f"{gate}count:": bqskit_circuit_original.count(gate)}
     original_gates.append(case_original)
     
 print(original_gates, "\n")
@@ -65,7 +65,7 @@ with Compiler(num_workers=1) as compiler:
     synthesized_circuit_squander = compiler.compile(task)
 
 #np.savetxt("squander unitary matrix",synthesized_circuit_squander.get_unitary())
-Circuit.save(synthesized_circuit_squander, circuit_name + '_squnder.qasm')
+Circuit.save(synthesized_circuit_squander, circuit_name + '_squander.qasm')
 
 
 
@@ -95,7 +95,7 @@ with open("squander_gates.pickle", "wb") as file:
 start_qsearch = time.time()
 
 
-task = CompilationTask(circuit, [
+task = CompilationTask(bqskit_circuit_original, [
     QuickPartitioner(4), 
     ForEachBlockPass([QSearchSynthesisPass(), ScanningGateRemovalPass()]), 
     UnfoldPass(),
@@ -136,13 +136,6 @@ with open("qsearch_gates.pickle", "wb") as file:
 
 ##############################################################################
 #################### Test the generated circuits #############################
-matrix_size = 1 << 16
-print( matrix_size )
-
-initial_state_real = np.random.uniform(-1.0,1.0, (matrix_size,) )
-initial_state_imag = np.random.uniform(-1.0,1.0, (matrix_size,) )
-initial_state = initial_state_real + initial_state_imag*1j
-initial_state = initial_state/np.linalg.norm(initial_state)
 
 
 from qiskit import QuantumCircuit
@@ -154,14 +147,26 @@ simulator = Aer.get_backend('statevector_simulator')
 
 # load the circuit from QASM format
 qc_original = QuantumCircuit.from_qasm_file( circuit_name + '.qasm' )
-qc_squander = QuantumCircuit.from_qasm_file( circuit_name + '_squnder.qasm' )
-qc_squander = QuantumCircuit.from_qasm_file( circuit_name + '_qsearch.qasm' )
+qc_squander = QuantumCircuit.from_qasm_file( circuit_name + '_squander.qasm' )
+qc_qsearch  = QuantumCircuit.from_qasm_file( circuit_name + '_qsearch.qasm' )
+
+
+# generate random initial state on which we test the circuits
+matrix_size = 1 << qc_original.num_qubits
+initial_state_real = np.random.uniform(-1.0,1.0, (matrix_size,) )
+initial_state_imag = np.random.uniform(-1.0,1.0, (matrix_size,) )
+initial_state = initial_state_real + initial_state_imag*1j
+initial_state = initial_state/np.linalg.norm(initial_state)
+
 
 state_to_transform = initial_state.copy()
 qc_original.initialize( state_to_transform )
 
 state_to_transform = initial_state.copy()
 qc_squander.initialize( state_to_transform )
+
+state_to_transform = initial_state.copy()
+qc_qsearch.initialize( state_to_transform )
 
 # Execute and get the state vector
 result                     = execute(qc_original, simulator).result()
