@@ -22,6 +22,12 @@ import time
 import pickle 
 # import
 
+
+# define the largest partition in circuit
+largest_partition = 5
+
+
+
 start_squander = time.time()
 
 
@@ -42,7 +48,7 @@ config = { 'max_outer_iterations': 1,
                 
 
 task = CompilationTask(bqskit_circuit_original, [
-    QuickPartitioner(4), 
+    QuickPartitioner( largest_partition ), 
     ForEachBlockPass([SquanderSynthesisPass(squander_config=config, optimizer_engine="AGENTS" ), ScanningGateRemovalPass()]), 
     UnfoldPass(),
 ])
@@ -96,7 +102,7 @@ start_qsearch = time.time()
 
 
 task = CompilationTask(bqskit_circuit_original, [
-    QuickPartitioner(4), 
+    QuickPartitioner( largest_partition ), 
     ForEachBlockPass([QSearchSynthesisPass(), ScanningGateRemovalPass()]), 
     UnfoldPass(),
 ])
