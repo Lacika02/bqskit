@@ -451,6 +451,7 @@ class SquanderSynthesisPass(SynthesisPass):
                     if self.store_partial_solutions:
                         data['psols'] = psols
 
+                    print('qsearch, qbit_num = ', qubitnum, ' dist = ', dist, "\n")
                     return circuit
 
                 if dist < best_dist:
@@ -484,7 +485,7 @@ class SquanderSynthesisPass(SynthesisPass):
         if self.store_partial_solutions:
             data['psols'] = psols
 
-
+        print('qsearch, qbit_num = ', qubitnum, ' dist = ', dist, "\n")
         return best_circ
 
     def _get_layer_gen(self, data: PassData) -> LayerGenerator:

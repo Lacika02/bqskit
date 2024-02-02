@@ -208,7 +208,6 @@ class QSearchSynthesisPass(SynthesisPass):
                     if self.store_partial_solutions:
                         data['psols'] = psols
 
-                    print( dist )
                     return circuit
 
                 if dist < best_dist:
@@ -242,7 +241,6 @@ class QSearchSynthesisPass(SynthesisPass):
         if self.store_partial_solutions:
             data['psols'] = psols
 
-        print( dist )
         return best_circ
 
     def _get_layer_gen(self, data: PassData) -> LayerGenerator:

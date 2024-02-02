@@ -1,5 +1,11 @@
 from bqskit.ir import Circuit
-circuit = Circuit.from_file('test_circuit/heisenberg-16-20.qasm')
+
+
+
+
+circuit_name = 'heisenberg-16-20'
+
+circuit = Circuit.from_file( circuit_name + '.qasm')
 
 
 from bqskit.compiler import CompilationTask
@@ -24,7 +30,7 @@ start_squander = time.time()
  
  
 config = { 'max_outer_iterations': 1, 
-                'agent_lifetime':200,
+                'agent_lifetime':400,
                 'max_inner_iterations_agent': 100000,
                 'convergence_length': 10,
                 'max_inner_iterations_compression': 10000,
@@ -36,7 +42,7 @@ config = { 'max_outer_iterations': 1,
                 
 
 task = CompilationTask(circuit, [
-    QuickPartitioner(6), # itt megpróbálni 4-re emelni
+    QuickPartitioner(4), 
     ForEachBlockPass([SquanderSynthesisPass(squander_config=config, optimizer_engine="AGENTS" ), ScanningGateRemovalPass()]), 
     UnfoldPass(),
 ])
@@ -59,9 +65,9 @@ with Compiler(num_workers=1) as compiler:
     synthesized_circuit_squander = compiler.compile(task)
 
 #np.savetxt("squander unitary matrix",synthesized_circuit_squander.get_unitary())
-Circuit.save(synthesized_circuit_squander,"squnder_circuit.qasm")
+Circuit.save(synthesized_circuit_squander, circuit_name + '_squnder.qasm')
 
-# itt is kiolvasni circuit és unitért és összehasonlítani az eredetivel
+
 
 
 print("\n the gates with squander :")
@@ -81,7 +87,7 @@ print(squander_gates, "\n")
 with open("squander_gates.pickle", "wb") as file:
     pickle.dump(squander_gates, file, pickle.HIGHEST_PROTOCOL)
 
-exit()
+
 
 ###########################################################################
 # QSearch synthesis
@@ -95,17 +101,18 @@ task = CompilationTask(circuit, [
     UnfoldPass(),
 ])
 
-print("\n the gates with qsearch :")
+
 # Finally, we construct a compiler and submit the task
 with Compiler() as compiler:
     synthesized_circuit_qsearch = compiler.compile(task)
 
 
-#np.savetxt("qsearch unitary matrix",synthesized_circuit_qsearch.get_unitary())
-Circuit.save(synthesized_circuit_qsearch,"qsearch_circuit.qasm")
-# itt is kiolvasni circuit és unitért és összehasonlítani az eredetivel
+# save the circuit is qasm format
+Circuit.save(synthesized_circuit_qsearch, circuit_name + '_qsearch.qasm')
 
 
+
+print("\n the gates with qsearch :")
 
 qsearch_gates = []
 
@@ -117,11 +124,65 @@ end_qsearch = time.time()
 time_qsearch = {"the execution time with qsearch:": end_qsearch-start_qsearch}
 qsearch_gates.append(time_qsearch)
 print(qsearch_gates, "\n")
-# végső eredményt kiiratni fájlba quasm-ba és ellenőrizni .
+
 
 with open("qsearch_gates.pickle", "wb") as file:
     pickle.dump(qsearch_gates, file, pickle.HIGHEST_PROTOCOL)
 
 
- 
+
+
+
+
+##############################################################################
+#################### Test the generated circuits #############################
+matrix_size = 1 << 16
+print( matrix_size )
+
+initial_state_real = np.random.uniform(-1.0,1.0, (matrix_size,) )
+initial_state_imag = np.random.uniform(-1.0,1.0, (matrix_size,) )
+initial_state = initial_state_real + initial_state_imag*1j
+initial_state = initial_state/np.linalg.norm(initial_state)
+
+
+from qiskit import QuantumCircuit
+from qiskit import Aer, execute
+
+# Select the StatevectorSimulator from the Aer provider
+simulator = Aer.get_backend('statevector_simulator')
+
+
+# load the circuit from QASM format
+qc_original = QuantumCircuit.from_qasm_file( circuit_name + '.qasm' )
+qc_squander = QuantumCircuit.from_qasm_file( circuit_name + '_squnder.qasm' )
+qc_squander = QuantumCircuit.from_qasm_file( circuit_name + '_qsearch.qasm' )
+
+state_to_transform = initial_state.copy()
+qc_original.initialize( state_to_transform )
+
+state_to_transform = initial_state.copy()
+qc_squander.initialize( state_to_transform )
+
+# Execute and get the state vector
+result                     = execute(qc_original, simulator).result()
+transformed_state_original = np.array( result.get_statevector(qc_original) )
+
+result                     = execute(qc_squander, simulator).result()
+transformed_state_squander = np.array( result.get_statevector(qc_squander) )
+
+result                     = execute(qc_qsearch, simulator).result()
+transformed_state_qsearch  = np.array( result.get_statevector(qc_qsearch) )
+
+
+
+
+overlap_squander = transformed_state_original.transpose().conjugate() @ transformed_state_squander
+overlap_squander = overlap_squander * overlap_squander.conj()
+
+
+overlap_qsearch = transformed_state_original.transpose().conjugate() @ transformed_state_qsearch
+overlap_qsearch = overlap_qsearch * overlap_qsearch.conj()
+
+print( 'The overlap of states obtained with the original and the squander compressed circuit: ',  overlap_squander )
+print( 'The overlap of states obtained with the original and the qsearch compressed circuit: ',  overlap_qsearch )
 
