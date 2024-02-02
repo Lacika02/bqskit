@@ -310,10 +310,9 @@ class SquanderSynthesisPass(SynthesisPass):
             cDecompose = N_Qubit_Decomposition_adaptive( Umtx.conj().T, config=self.squander_config, accelerator_num=0 )
             #cDecompose.set_Project_Name( project_name )
 
-            cDecompose.set_Cost_Function_Variant( 0)
-	
-            cDecompose.set_Verbose( -3 )
+            cDecompose.set_Verbose( 0 )
 
+            cDecompose.set_Cost_Function_Variant( 0)
 	
 	
             # adding decomposing layers to the gate structure
