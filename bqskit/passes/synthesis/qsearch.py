@@ -207,6 +207,7 @@ class QSearchSynthesisPass(SynthesisPass):
                     _logger.debug('Successful synthesis.')
                     if self.store_partial_solutions:
                         data['psols'] = psols
+
                     return circuit
 
                 if dist < best_dist:
