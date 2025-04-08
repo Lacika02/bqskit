@@ -25,8 +25,10 @@ our `tutorial series. <https://github.com/BQSKit/bqskit-tutorial/>`_
    :caption: Guides
    :maxdepth: 1
 
-   guides/distributing.md
+   guides/customgate.md
    guides/custompass.md
+   guides/distributing.md
+   guides/usegpus.md
 
 .. toctree::
    :caption: API Reference

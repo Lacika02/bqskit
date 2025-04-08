@@ -152,6 +152,19 @@ class UnitaryMatrix(Unitary, StateVectorMap, NDArrayOperatorsMixin):
         """The conjugate transpose of the unitary."""
         return self.conj().T
 
+    def to_special(self) -> UnitaryMatrix:
+        """Return a special unitary matrix verson of this one."""
+        determinant = np.linalg.det(self)
+        dimension = len(self)
+        global_phase = np.angle(determinant) / dimension
+        global_phase = global_phase % (2 * np.pi / dimension)
+        global_phase_factor = np.exp(-1j * global_phase)
+        return global_phase_factor * self
+
+    def is_special(self) -> bool:
+        """Return true if this unitary is special."""
+        return 1 - np.abs(np.linalg.det(self)) < 1e-8
+
     def __len__(self) -> int:
         """The dimension of the square unitary matrix."""
         return self.shape[0]
@@ -186,6 +199,22 @@ class UnitaryMatrix(Unitary, StateVectorMap, NDArrayOperatorsMixin):
 
         return UnitaryMatrix(utry_acm, radixes_acm)
 
+    def ipower(self, power: int) -> UnitaryMatrix:
+        """
+        Calculate the integer power of this unitary.
+
+        Args:
+            power (int): The integer power to raise the unitary to.
+
+        Returns:
+            UnitaryMatrix: The resulting unitary matrix.
+        """
+        if power < 0:
+            mat = np.linalg.matrix_power(self.dagger, -power)
+        else:
+            mat = np.linalg.matrix_power(self, power)
+        return UnitaryMatrix(mat, self.radixes)
+
     def get_unitary(self, params: RealVector = []) -> UnitaryMatrix:
         """Return the same object, satisfies the :class:`Unitary` API."""
         return self
@@ -198,7 +227,7 @@ class UnitaryMatrix(Unitary, StateVectorMap, NDArrayOperatorsMixin):
 
         .. math::
 
-            \\sqrt[D]{1 - \\frac{|Tr(U_1^\\dagger U_2)|}{N}^D}
+            \\sqrt[D]{1 - \\frac{|Tr(U_1^\\dagger U_2)|^D}{N^D}}
 
         where D is the degree, by default is 2.
 
@@ -212,12 +241,29 @@ class UnitaryMatrix(Unitary, StateVectorMap, NDArrayOperatorsMixin):
             are equal up to global phase and 1 means the two unitaries are
             very unsimilar or far apart.
         """
-        other = UnitaryMatrix(other)
+        other = UnitaryMatrix(other, check_arguments=False)
         num = np.abs(np.trace(self.conj().T @ other))
         dem = self.dim
         frac = min(num / dem, 1)
         dist = np.power(1 - (frac ** degree), 1.0 / degree)
         return dist if dist > 0.0 else 0.0
+
+    def isclose(self, other: UnitaryLike, tol: float = 1e-6) -> bool:
+        """
+        Check if `self` is approximately equal to `other` upto global phase.
+
+        Args:
+            other (UnitaryLike): The unitary to compare to.
+
+            tol (float): The numerical precision of the check.
+
+        Returns:
+            bool: True if `self` is close to `other`.
+
+        See Also:
+            - :func:`get_distance_from` for the error function used.
+        """
+        return self.get_distance_from(other) < tol
 
     def get_statevector(self, in_state: StateLike) -> StateVector:
         """
@@ -475,7 +521,7 @@ class UnitaryMatrix(Unitary, StateVectorMap, NDArrayOperatorsMixin):
         )
 
         if convert_back:
-            return UnitaryMatrix(out, self.radixes)
+            return UnitaryMatrix(out, self.radixes, False)
 
         return out
 
@@ -494,6 +540,11 @@ class UnitaryMatrix(Unitary, StateVectorMap, NDArrayOperatorsMixin):
 
 UnitaryLike = Union[
     UnitaryMatrix,
-    np.ndarray,
+    npt.NDArray[np.complex128],
+    npt.NDArray[np.complex64],
+    npt.NDArray[np.int64],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float32],
     Sequence[Sequence[Union[int, float, complex]]],
 ]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import warnings
 from typing import Any
 from typing import Literal
@@ -10,11 +11,14 @@ from typing import Sequence
 from typing import TYPE_CHECKING
 from typing import Union
 
-import numpy as np
-
 from bqskit.compiler.compiler import Compiler
 from bqskit.compiler.machine import MachineModel
 from bqskit.compiler.passdata import PassData
+from bqskit.compiler.registry import _compile_circuit_registry
+from bqskit.compiler.registry import _compile_statemap_registry
+from bqskit.compiler.registry import _compile_stateprep_registry
+from bqskit.compiler.registry import _compile_unitary_registry
+from bqskit.compiler.registry import model_registered_target_types
 from bqskit.compiler.workflow import Workflow
 from bqskit.compiler.workflow import WorkflowLike
 from bqskit.ir.circuit import Circuit
@@ -52,7 +56,7 @@ from bqskit.passes.mapping.placement.greedy import GreedyPlacementPass
 from bqskit.passes.mapping.routing.pam import PAMRoutingPass
 from bqskit.passes.mapping.routing.sabre import GeneralizedSabreRoutingPass
 from bqskit.passes.mapping.setmodel import ExtractModelConnectivityPass
-from bqskit.passes.mapping.setmodel import RestoreModelConnevtivityPass
+from bqskit.passes.mapping.setmodel import RestoreModelConnectivityPass
 from bqskit.passes.mapping.setmodel import SetModelPass
 from bqskit.passes.mapping.topology import SubtopologySelectionPass
 from bqskit.passes.mapping.verify import PAMVerificationSequence
@@ -582,7 +586,7 @@ def compile(
         if error_threshold is not None:
             for i, data in enumerate(datas):
                 error = data.error
-                nonsq_error = 1 - np.sqrt(max(1 - (error * error), 0))
+                nonsq_error = 1 - math.sqrt(max(1 - (error * error), 0))
                 if nonsq_error > error_threshold:
                     warnings.warn(
                         'Upper bound on error is greater than set threshold:'
@@ -622,8 +626,11 @@ def compile(
         if isinstance(typed_input, Circuit):
             in_circuit = typed_input
 
+        elif isinstance(typed_input, UnitaryMatrix):
+            in_circuit = Circuit.from_unitary(typed_input)
+
         else:
-            in_circuit = Circuit(1)
+            in_circuit = Circuit(typed_input.num_qudits, typed_input.radixes)
 
         # Perform the compilation
         out, data = compiler.compile(in_circuit, workflow, True)
@@ -631,7 +638,7 @@ def compile(
         # Log error if necessary
         if error_threshold is not None:
             error = data.error
-            nonsq_error = 1 - np.sqrt(max(1 - (error * error), 0))
+            nonsq_error = 1 - math.sqrt(max(1 - (error * error), 0))
             if nonsq_error > error_threshold:
                 warnings.warn(
                     'Upper bound on error is greater than set threshold:'
@@ -669,6 +676,8 @@ def build_workflow(
     if model is None:
         model = MachineModel(input.num_qudits, radixes=input.radixes)
 
+    model_registered_types = model_registered_target_types(model)
+
     if isinstance(input, Circuit):
         if input.num_qudits > max_synthesis_size:
             if any(
@@ -685,6 +694,16 @@ def build_workflow(
                     'Unable to compile circuit with gate larger than'
                     ' max_synthesis_size.\nConsider adjusting it.',
                 )
+        # Use a registered workflow if model is found in the circuit registry
+        # for a given optimization_level
+        if model in _compile_circuit_registry:
+            if optimization_level in _compile_circuit_registry[model]:
+                return _compile_circuit_registry[model][optimization_level]
+        elif len(model_registered_types) > 0:
+            m = f'MachineModel {model} is registered for inputs of type in '
+            m += f'{model_registered_types}, but input is {type(input)}. '
+            m += f'You may need to register a Workflow for type {type(input)}.'
+            warnings.warn(m)
 
         return _circuit_workflow(
             model,
@@ -702,6 +721,16 @@ def build_workflow(
                 'Unable to compile unitary with size larger than'
                 ' max_synthesis_size.\nConsider adjusting it.',
             )
+        # Use a registered workflow if model is found in the unitary registry
+        # for a given optimization_level
+        if model in _compile_unitary_registry:
+            if optimization_level in _compile_unitary_registry[model]:
+                return _compile_unitary_registry[model][optimization_level]
+        elif len(model_registered_types) > 0:
+            m = f'MachineModel {model} is registered for inputs of type in '
+            m += f'{model_registered_types}, but input is {type(input)}. '
+            m += f'You may need to register a Workflow for type {type(input)}.'
+            warnings.warn(m)
 
         return _synthesis_workflow(
             input,
@@ -720,6 +749,16 @@ def build_workflow(
                 'Unable to compile states with size larger than'
                 ' max_synthesis_size.\nConsider adjusting it.',
             )
+        # Use a registered workflow if model is found in the stateprep registry
+        # for a given optimization_level
+        if model in _compile_stateprep_registry:
+            if optimization_level in _compile_stateprep_registry[model]:
+                return _compile_stateprep_registry[model][optimization_level]
+        elif len(model_registered_types) > 0:
+            m = f'MachineModel {model} is registered for inputs of type in '
+            m += f'{model_registered_types}, but input is {type(input)}. '
+            m += f'You may need to register a Workflow for type {type(input)}.'
+            warnings.warn(m)
 
         return _stateprep_workflow(
             input,
@@ -738,6 +777,16 @@ def build_workflow(
                 'Unable to compile state systems with size larger than'
                 ' max_synthesis_size.\nConsider adjusting it.',
             )
+        # Use a registered workflow if model is found in the statemap registry
+        # for a given optimization_level
+        if model in _compile_statemap_registry:
+            if optimization_level in _compile_statemap_registry[model]:
+                return _compile_statemap_registry[model][optimization_level]
+        elif len(model_registered_types) > 0:
+            m = f'MachineModel {model} is registered for inputs of type in '
+            m += f'{model_registered_types}, but input is {type(input)}. '
+            m += f'You may need to register a Workflow for type {type(input)}.'
+            warnings.warn(m)
 
         return _statemap_workflow(
             input,
@@ -989,9 +1038,41 @@ def build_multi_qudit_retarget_workflow(
     """
     Build standard workflow for circuit multi-qudit gate set retargeting.
 
-    This workflow assumes that SetModelPass will be run earlier in the full
-    workflow and doesn't add it in here.
+    Notes:
+        - This workflow assumes that SetModelPass will be run earlier in the
+          full workflow and doesn't add it in here.
+
+        - For the most part, circuit connectivity isn't a concern during
+          retargeting. However, if the circuit contains many-qudit (>= 3)
+          gates, then the workflow will not preserve connectivity during
+          the decomposition of those gates. If your input contains many-qudit
+          gates, consider following this with a mapping workflow.
     """
+
+    core_retarget_workflow = [
+        FillSingleQuditGatesPass(),
+        IfThenElsePass(
+            NotPredicate(MultiPhysicalPredicate()),
+            IfThenElsePass(
+                ManyQuditGatesPredicate(),
+                [
+                    ExtractModelConnectivityPass(),
+                    build_standard_search_synthesis_workflow(
+                        optimization_level,
+                        synthesis_epsilon,
+                    ),
+                    RestoreModelConnectivityPass(),
+                ],
+                AutoRebase2QuditGatePass(3, 5, synthesis_epsilon),
+            ),
+            ScanningGateRemovalPass(
+                success_threshold=synthesis_epsilon,
+                collection_filter=_mq_gate_collection_filter,
+                instantiate_options=get_instantiate_options(optimization_level),
+            ),
+        ),
+    ]
+
     return Workflow(
         [
             IfThenElsePass(
@@ -999,27 +1080,7 @@ def build_multi_qudit_retarget_workflow(
                 [
                     LogPass('Retargeting multi-qudit gates.'),
                     build_partitioning_workflow(
-                        [
-                            FillSingleQuditGatesPass(),
-                            IfThenElsePass(
-                                NotPredicate(MultiPhysicalPredicate()),
-                                IfThenElsePass(
-                                    ManyQuditGatesPredicate(),
-                                    build_standard_search_synthesis_workflow(
-                                        optimization_level,
-                                        synthesis_epsilon,
-                                    ),
-                                    AutoRebase2QuditGatePass(3, 5),
-                                ),
-                                ScanningGateRemovalPass(
-                                    success_threshold=synthesis_epsilon,
-                                    collection_filter=_mq_gate_collection_filter,  # noqa: E501
-                                    instantiate_options=get_instantiate_options(
-                                        optimization_level,
-                                    ),
-                                ),
-                            ),
-                        ],
+                        core_retarget_workflow,
                         max_synthesis_size,
                         None if error_threshold is None else error_sim_size,
                     ),
@@ -1221,6 +1282,7 @@ def build_seqpam_mapping_optimization_workflow(
         IfThenElsePass(
             NotPredicate(WidthPredicate(2)),
             [
+                LogPass('Caching permutation-aware synthesis results.'),
                 ExtractModelConnectivityPass(),
                 QuickPartitioner(block_size),
                 ForEachBlockPass(
@@ -1240,11 +1302,13 @@ def build_seqpam_mapping_optimization_workflow(
                         ),
                     ),
                 ),
+                LogPass('Preoptimizing with permutation-aware mapping.'),
                 PAMRoutingPass(),
                 post_pam_seq,
                 UnfoldPass(),
-                RestoreModelConnevtivityPass(),
+                RestoreModelConnectivityPass(),
 
+                LogPass('Recaching permutation-aware synthesis results.'),
                 SubtopologySelectionPass(block_size),
                 QuickPartitioner(block_size),
                 ForEachBlockPass(
@@ -1264,6 +1328,7 @@ def build_seqpam_mapping_optimization_workflow(
                         ),
                     ),
                 ),
+                LogPass('Performing permutation-aware mapping.'),
                 ApplyPlacement(),
                 PAMLayoutPass(num_layout_passes),
                 PAMRoutingPass(0.1),

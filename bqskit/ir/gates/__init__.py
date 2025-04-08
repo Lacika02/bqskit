@@ -23,6 +23,7 @@ BQSKit Gates (:mod:`bqskit.ir.gates`)
     CXGate
     CYGate
     CZGate
+    ECRGate
     HGate
     IdentityGate
     ISwapGate
@@ -37,6 +38,7 @@ BQSKit Gates (:mod:`bqskit.ir.gates`)
     ShiftGate
     SqrtCNOTGate
     SqrtISwapGate
+    SqrtTGate
     SubSwapGate
     SwapGate
     SqrtXGate
@@ -70,7 +72,10 @@ BQSKit Gates (:mod:`bqskit.ir.gates`)
     CRZGate
     CUGate
     FSIMGate
+    MPRYGate
+    MPRZGate
     PauliGate
+    PauliZGate
     PhasedXZGate
     RSU3Gate
     RXGate
@@ -97,6 +102,7 @@ BQSKit Gates (:mod:`bqskit.ir.gates`)
     :template: autosummary/gate.rst
 
     ControlledGate
+    PowerGate
     DaggerGate
     EmbeddedGate
     FrozenParameterGate
@@ -112,6 +118,7 @@ BQSKit Gates (:mod:`bqskit.ir.gates`)
 
     CircuitGate
     MeasurementPlaceholder
+    Reset
     BarrierPlaceholder
 
 .. rubric:: Gate Base Classes
@@ -146,11 +153,15 @@ from bqskit.ir.gates.parameterized import __all__ as parameterized_all
 from bqskit.ir.gates.qubitgate import QubitGate
 from bqskit.ir.gates.quditgate import QuditGate
 from bqskit.ir.gates.qutritgate import QutritGate
+from bqskit.ir.gates.reset import Reset
 
 __all__ = composed_all + constant_all + parameterized_all
 __all__ += ['ComposedGate', 'ConstantGate']
 __all__ += ['QubitGate', 'QutritGate', 'QuditGate']
-__all__ += ['CircuitGate', 'MeasurementPlaceholder', 'BarrierPlaceholder']
+__all__ += [
+    'CircuitGate', 'MeasurementPlaceholder',
+    'Reset', 'BarrierPlaceholder',
+]
 __all__ += ['GeneralGate']
 
 # TODO: Implement the rest of the gates in:

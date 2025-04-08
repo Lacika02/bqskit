@@ -11,6 +11,8 @@ from bqskit.ir.gates.constant.cx import CNOTGate
 from bqskit.ir.gates.constant.cz import CZGate
 from bqskit.ir.gates.constant.sx import SXGate
 from bqskit.ir.gates.constant.x import XGate
+from bqskit.ir.gates.constant import IdentityGate
+from bqskit.ir.gates.constant import ECRGate
 from bqskit.ir.gates.parameterized import RZGate
 from bqskit.ir.gates.parameterized.u1 import U1Gate
 from bqskit.ir.gates.parameterized.u2 import U2Gate
@@ -23,7 +25,7 @@ def model_from_backend(backend: BackendV1) -> MachineModel:
     num_qudits = config.n_qubits
     gate_set = _basis_gate_str_to_bqskit_gate(config.basis_gates)
     coupling_map = list({tuple(sorted(e)) for e in config.coupling_map})
-    return MachineModel(num_qudits, coupling_map, gate_set)  # type: ignore
+    return MachineModel(num_qudits, coupling_map, gate_set)
 
 
 def _basis_gate_str_to_bqskit_gate(basis_gates: list[str]) -> set[Gate]:
@@ -35,6 +37,8 @@ def _basis_gate_str_to_bqskit_gate(basis_gates: list[str]) -> set[Gate]:
             gate_set.add(CNOTGate())
         elif basis_gate == 'cz':
             gate_set.add(CZGate())
+        elif basis_gate == 'ecr':
+            gate_set.add(ECRGate())
         elif basis_gate == 'u3':
             gate_set.add(U3Gate())
         elif basis_gate == 'u2':
@@ -49,4 +53,6 @@ def _basis_gate_str_to_bqskit_gate(basis_gates: list[str]) -> set[Gate]:
             gate_set.add(SXGate())
         elif basis_gate == 'p':
             gate_set.add(RZGate())
+        elif basis_gate == 'id':
+            gate_set.add(IdentityGate())
     return gate_set

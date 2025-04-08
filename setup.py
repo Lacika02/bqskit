@@ -9,7 +9,7 @@ from setuptools import setup
 root_dir_path = os.path.abspath(os.path.dirname(__file__))
 pkg_dir_path = os.path.join(root_dir_path, 'bqskit')
 readme_path = os.path.join(root_dir_path, 'README.md')
-version_path = os.path.join(pkg_dir_path, 'version.py')
+version_path = os.path.join(pkg_dir_path, '_version.py')
 
 # Load Version Number
 with open(version_path) as version_file:
@@ -45,6 +45,7 @@ setup(
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Topic :: Scientific/Engineering :: Physics',
@@ -65,11 +66,12 @@ setup(
     },
     packages=find_packages(exclude=['examples*', 'test*']),
     install_requires=[
-        'bqskitrs>=0.4.0',
-        'lark-parser',
+        'bqskitrs>=0.4.1',
+        'lark',
         'numpy>=1.22.0',
         'scipy>=1.8.0',
         'typing-extensions>=4.0.0',
+        'dill>=0.3.8',
     ],
     python_requires='>=3.8, <4',
     entry_points={
